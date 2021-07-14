@@ -17,7 +17,10 @@ const (
 
 var (
 	urlMapMatchersLabels = []string{"url_map", "host", "path", "backend_service"}
-	urlMapMatchersDesc   = prometheus.NewDesc("gcp_url_map_matchers", "GCP URL map matchers.", urlMapMatchersLabels, nil)
+	projectLabels        = []string{"project", "region"}
+
+	urlMapMatchersDesc = prometheus.NewDesc("gcp_url_map_matchers", "GCP URL map matchers.", urlMapMatchersLabels, nil)
+	projectDesc        = prometheus.NewDesc("gcp_project", "GCP Project", projectLabels, nil)
 )
 
 type gcpCollector struct {
@@ -78,6 +81,7 @@ func (p *gcpCollector) checkSync() {
 }
 
 func (p *gcpCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- projectDesc
 	ch <- urlMapMatchersDesc
 }
 
@@ -85,6 +89,8 @@ func (p *gcpCollector) Collect(ch chan<- prometheus.Metric) {
 	p.RLock()
 	defer p.RUnlock()
 	p.checkSync()
+
+	ch <- prometheus.MustNewConstMetric(projectDesc, prometheus.GaugeValue, 1.0, p.config.gcpProject, p.config.gcpRegion)
 
 	for _, urlMap := range p.urlMaps {
 		p.collectURLMap(ch, urlMap)
