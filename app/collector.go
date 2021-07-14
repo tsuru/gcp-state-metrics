@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"strings"
 	"sync"
@@ -56,7 +55,6 @@ func (p *gcpCollector) sync() {
 	p.Lock()
 
 	p.urlMaps = urlMaps
-	fmt.Printf("DEBUG: urlmaps = %s\n", p.urlMaps)
 	p.Unlock()
 }
 
@@ -111,7 +109,6 @@ func (p *gcpCollector) collectURLMapPathMatcher(ch chan<- prometheus.Metric, url
 		for _, pathRule := range pathMatcher.PathRules {
 			for _, path := range pathRule.Paths {
 				sn := serviceBackendName(pathRule.Service)
-				fmt.Printf("DEBUG: serviceBackendName = %s\n", sn)
 				ch <- prometheus.MustNewConstMetric(urlMapMatchersDesc, prometheus.GaugeValue, 1.0, urlMap.Name, host, path, sn)
 			}
 		}
