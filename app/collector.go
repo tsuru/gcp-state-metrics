@@ -9,6 +9,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/tsuru/gcp-state-metrics/gcp"
+	computepb "google.golang.org/genproto/googleapis/cloud/compute/v1"
 )
 
 const (
@@ -30,7 +31,7 @@ type gcpCollector struct {
 	syncRunning   chan struct{}
 	requestsLimit chan struct{}
 	lastSync      time.Time
-	urlMaps       []gcp.URLMap
+	urlMaps       []computepb.UrlMap
 }
 
 func newGCPCollector(conf *config) (*gcpCollector, error) {
@@ -49,8 +50,7 @@ func (p *gcpCollector) sync() {
 		p.Unlock()
 	}()
 
-	client := &gcp.URLMapClient{}
-	urlMaps, err := client.List(context.Background(), p.config.gcpProject, p.config.gcpRegion)
+	urlMaps, err := gcp.ListURLMaps(context.Background(), p.config.gcpProject, p.config.gcpRegion)
 	if err != nil {
 		log.Printf("Failed to list url maps, err %v", err)
 	}
@@ -97,25 +97,39 @@ func (p *gcpCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 }
 
-func (p *gcpCollector) collectURLMap(ch chan<- prometheus.Metric, urlMap gcp.URLMap) {
-	m := map[string]gcp.URLMapPathMatcher{}
-	for _, pathMatcher := range urlMap.PatchMatchers {
-		m[pathMatcher.Name] = pathMatcher
+func (p *gcpCollector) collectURLMap(ch chan<- prometheus.Metric, urlMap computepb.UrlMap) {
+	m := map[string]computepb.PathMatcher{}
+	for _, pathMatcher := range urlMap.PathMatchers {
+		var name string
+		if pathMatcher.Name != nil {
+			name = *pathMatcher.Name
+		}
+		m[name] = *pathMatcher
 	}
 	for _, hostRule := range urlMap.HostRules {
-		pathMatcher := m[hostRule.PathMatcher]
-
-		p.collectURLMapPathMatcher(ch, urlMap, hostRule, pathMatcher)
-
+		var pathMatcherName string
+		if hostRule.PathMatcher != nil {
+			pathMatcherName = *hostRule.PathMatcher
+		}
+		pathMatcher := m[pathMatcherName]
+		p.collectURLMapPathMatcher(ch, urlMap, *hostRule, pathMatcher)
 	}
 }
 
-func (p *gcpCollector) collectURLMapPathMatcher(ch chan<- prometheus.Metric, urlMap gcp.URLMap, hostRule gcp.URLMapHostRule, pathMatcher gcp.URLMapPathMatcher) {
+func (p *gcpCollector) collectURLMapPathMatcher(ch chan<- prometheus.Metric, urlMap computepb.UrlMap, hostRule computepb.HostRule, pathMatcher computepb.PathMatcher) {
 	for _, host := range hostRule.Hosts {
 		for _, pathRule := range pathMatcher.PathRules {
 			for _, path := range pathRule.Paths {
-				sn := serviceBackendName(pathRule.Service)
-				ch <- prometheus.MustNewConstMetric(urlMapMatchersDesc, prometheus.GaugeValue, 1.0, urlMap.Name, host, path, sn)
+				var urlMapName string
+				if urlMap.Name != nil {
+					urlMapName = *urlMap.Name
+				}
+				var serviceName string
+				if pathRule.Service != nil {
+					serviceName = *pathRule.Service
+				}
+				sn := serviceBackendName(serviceName)
+				ch <- prometheus.MustNewConstMetric(urlMapMatchersDesc, prometheus.GaugeValue, 1.0, urlMapName, host, path, sn)
 			}
 		}
 	}
