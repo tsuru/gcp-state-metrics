@@ -7,6 +7,11 @@ import (
 	"time"
 )
 
+const (
+	defaultSyncInterval = 5 * time.Minute
+	defaultSyncTimeout  = 2 * time.Minute
+)
+
 type config struct {
 	port         string
 	syncInterval time.Duration

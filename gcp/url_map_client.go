@@ -30,3 +30,26 @@ func ListURLMaps(ctx context.Context, project, region string) ([]computepb.UrlMa
 	}
 	return result, nil
 }
+
+func ListForwardingRules(ctx context.Context, project, region string) ([]computepb.ForwardingRule, error) {
+	cli, err := computev1.NewForwardingRulesRESTClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	it := cli.List(ctx, &computepb.ListForwardingRulesRequest{
+		Project: project,
+		Region:  region,
+	})
+	var result []computepb.ForwardingRule
+	for {
+		resp, err := it.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, *resp)
+	}
+	return result, nil
+}

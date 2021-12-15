@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"log"
-	"strings"
 	"sync"
 	"time"
 
@@ -12,33 +11,39 @@ import (
 	computepb "google.golang.org/genproto/googleapis/cloud/compute/v1"
 )
 
-const (
-	defaultSyncInterval = 5 * time.Minute
-)
-
 var (
-	urlMapMatchersLabels = []string{"url_map", "host", "path", "backend_service"}
-	projectLabels        = []string{"project", "region"}
+	urlMapMatchersLabels  = []string{"url_map", "host", "path", "backend_service"}
+	projectLabels         = []string{"project", "region"}
+	forwardingRulesLabels = []string{
+		"forwading_rule",
+		"address",
+		"type",
+		"tier",
+		"protocol",
+		"kubernetes_resource",
+		"kubernetes_namespace",
+		"kubernetes_name",
+	}
 
 	urlMapMatchersDesc = prometheus.NewDesc("gcp_url_map_matchers", "GCP URL map matchers.", urlMapMatchersLabels, nil)
 	projectDesc        = prometheus.NewDesc("gcp_project", "GCP Project", projectLabels, nil)
+	forwadingRulesDesc = prometheus.NewDesc("gcp_forwarding_rules", "GCP Forwading Rules.", forwardingRulesLabels, nil)
 )
 
 type gcpCollector struct {
 	sync.RWMutex
 
-	config        *config
-	syncRunning   chan struct{}
-	requestsLimit chan struct{}
-	lastSync      time.Time
-	urlMaps       []computepb.UrlMap
+	config          *config
+	syncRunning     chan struct{}
+	lastSync        time.Time
+	urlMaps         []computepb.UrlMap
+	forwardingRules []computepb.ForwardingRule
 }
 
 func newGCPCollector(conf *config) (*gcpCollector, error) {
 	collector := &gcpCollector{
-		config:        conf,
-		syncRunning:   make(chan struct{}, 1),
-		requestsLimit: make(chan struct{}, conf.maxRequests),
+		config:      conf,
+		syncRunning: make(chan struct{}, 1),
 	}
 	return collector, prometheus.Register(collector)
 }
@@ -50,14 +55,22 @@ func (p *gcpCollector) sync() {
 		p.Unlock()
 	}()
 
-	urlMaps, err := gcp.ListURLMaps(context.Background(), p.config.gcpProject, p.config.gcpRegion)
+	timeoutCtx, cancel := context.WithTimeout(context.Background(), defaultSyncTimeout)
+	defer cancel()
+
+	urlMaps, err := gcp.ListURLMaps(timeoutCtx, p.config.gcpProject, p.config.gcpRegion)
 	if err != nil {
 		log.Printf("Failed to list url maps, err %v", err)
 	}
 
-	p.Lock()
+	forwardingRules, err := gcp.ListForwardingRules(timeoutCtx, p.config.gcpProject, p.config.gcpRegion)
+	if err != nil {
+		log.Printf("Failed to list forwarding rules, err %v", err)
+	}
 
+	p.Lock()
 	p.urlMaps = urlMaps
+	p.forwardingRules = forwardingRules
 	p.Unlock()
 }
 
@@ -83,6 +96,7 @@ func (p *gcpCollector) checkSync() {
 func (p *gcpCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- projectDesc
 	ch <- urlMapMatchersDesc
+	ch <- forwadingRulesDesc
 }
 
 func (p *gcpCollector) Collect(ch chan<- prometheus.Metric) {
@@ -95,47 +109,8 @@ func (p *gcpCollector) Collect(ch chan<- prometheus.Metric) {
 	for _, urlMap := range p.urlMaps {
 		p.collectURLMap(ch, urlMap)
 	}
-}
 
-func (p *gcpCollector) collectURLMap(ch chan<- prometheus.Metric, urlMap computepb.UrlMap) {
-	m := map[string]computepb.PathMatcher{}
-	for _, pathMatcher := range urlMap.PathMatchers {
-		var name string
-		if pathMatcher.Name != nil {
-			name = *pathMatcher.Name
-		}
-		m[name] = *pathMatcher
+	for _, fr := range p.forwardingRules {
+		p.collectForwardingRule(ch, fr)
 	}
-	for _, hostRule := range urlMap.HostRules {
-		var pathMatcherName string
-		if hostRule.PathMatcher != nil {
-			pathMatcherName = *hostRule.PathMatcher
-		}
-		pathMatcher := m[pathMatcherName]
-		p.collectURLMapPathMatcher(ch, urlMap, *hostRule, pathMatcher)
-	}
-}
-
-func (p *gcpCollector) collectURLMapPathMatcher(ch chan<- prometheus.Metric, urlMap computepb.UrlMap, hostRule computepb.HostRule, pathMatcher computepb.PathMatcher) {
-	for _, host := range hostRule.Hosts {
-		for _, pathRule := range pathMatcher.PathRules {
-			for _, path := range pathRule.Paths {
-				var urlMapName string
-				if urlMap.Name != nil {
-					urlMapName = *urlMap.Name
-				}
-				var serviceName string
-				if pathRule.Service != nil {
-					serviceName = *pathRule.Service
-				}
-				sn := serviceBackendName(serviceName)
-				ch <- prometheus.MustNewConstMetric(urlMapMatchersDesc, prometheus.GaugeValue, 1.0, urlMapName, host, path, sn)
-			}
-		}
-	}
-}
-
-func serviceBackendName(url string) string {
-	parts := strings.Split(url, "/")
-	return parts[len(parts)-1]
 }
