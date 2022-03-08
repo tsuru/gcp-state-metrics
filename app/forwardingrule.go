@@ -11,6 +11,8 @@ import (
 type frDesc struct {
 	ServiceName string `json:"kubernetes.io/service-name"`
 	IngressName string `json:"kubernetes.io/ingress-name"`
+
+	NewServiceName string `json:"networking.gke.io/service-name"`
 }
 
 func (p *gcpCollector) collectForwardingRule(ch chan<- prometheus.Metric, fr computepb.ForwardingRule) {
@@ -21,7 +23,10 @@ func (p *gcpCollector) collectForwardingRule(ch chan<- prometheus.Metric, fr com
 	err := json.Unmarshal([]byte(strVal(fr.Description)), &desc)
 	if err == nil {
 		var fullName string
-		if desc.ServiceName != "" {
+		if desc.NewServiceName != "" {
+			kubeResource = "service"
+			fullName = desc.NewServiceName
+		} else if desc.ServiceName != "" {
 			kubeResource = "service"
 			fullName = desc.ServiceName
 		} else if desc.IngressName != "" {
