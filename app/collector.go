@@ -70,9 +70,14 @@ func (p *gcpCollector) sync() {
 		log.Printf("Failed to list forwarding rules, err %v", err)
 	}
 
+	globalForwardingRules, err := gcp.ListGlobalForwardingRules(timeoutCtx, p.config.gcpProject)
+	if err != nil {
+		log.Printf("Failed to list global forwarding rules, err %v", err)
+	}
+
 	p.Lock()
 	p.urlMaps = urlMaps
-	p.forwardingRules = forwardingRules
+	p.forwardingRules = append(forwardingRules, globalForwardingRules...)
 	p.Unlock()
 }
 

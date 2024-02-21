@@ -53,3 +53,25 @@ func ListForwardingRules(ctx context.Context, project, region string) ([]compute
 	}
 	return result, nil
 }
+
+func ListGlobalForwardingRules(ctx context.Context, project string) ([]computepb.ForwardingRule, error) {
+	cli, err := computev1.NewGlobalForwardingRulesRESTClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	it := cli.List(ctx, &computepb.ListGlobalForwardingRulesRequest{
+		Project: project,
+	})
+	var result []computepb.ForwardingRule
+	for {
+		resp, err := it.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, *resp)
+	}
+	return result, nil
+}
