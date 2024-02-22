@@ -4,7 +4,7 @@ go 1.17
 
 require (
 	cloud.google.com/go v0.99.0
-	github.com/prometheus/client_golang v1.11.0
+	github.com/prometheus/client_golang v1.11.1
 	google.golang.org/api v0.61.0
 	google.golang.org/genproto v0.0.0-20211206160659-862468c7d6e0
 )
